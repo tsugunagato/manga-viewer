@@ -635,9 +635,10 @@
 
   document.addEventListener('keydown', e => {
     if (!hasBook() || e.altKey || e.ctrlKey || e.metaKey) return; // Alt+← などブラウザの操作は邪魔しない
-    switch (e.key){
-      case 'ArrowLeft': go(current + 1); break;
-      case 'ArrowRight': go(current - 1); break;
+    // A / D はキーの位置（e.code）で判定するので、日本語入力がオンでも Shift を押していても効く
+    switch (e.code === 'KeyA' || e.code === 'KeyD' ? e.code : e.key){
+      case 'ArrowLeft': case 'KeyA': go(current + 1); break;
+      case 'ArrowRight': case 'KeyD': go(current - 1); break;
       case 'Home': go(0); break;
       case 'End': go(spreads.length - 1); break;
       case 'Escape': openThumbs(false); break;
