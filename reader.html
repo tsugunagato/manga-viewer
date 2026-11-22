@@ -116,7 +116,7 @@
   .nav-hint{ text-align:center; font-size:10px; color:var(--faint); margin-top:12px; letter-spacing:.08em; }
 
   /* ---------- 見開き表示 ---------- */
-  #viewer{ position:relative; z-index:1; flex:1; min-height:0; display:flex; }
+  #viewer{ position:relative; z-index:1; flex:1; min-height:0; display:flex; user-select:none; } /* 連続クリックで選択状態にならないように */
   .page-slot{ flex:1; min-width:0; height:100%; display:flex; align-items:center; }
   #slotLeft{ justify-content:flex-end; }   /* 左右のページが画面中央で接するように寄せる */
   #slotRight{ justify-content:flex-start; }
@@ -185,7 +185,7 @@
       <button class="icon-btn" id="startSideBtn" title="開始ページの位置を切替（右／左）">開始:左</button>
       <button class="icon-btn" id="fullscreenBtn" title="全画面表示">⛶</button>
       <button class="icon-btn" id="thumbToggleBtn" title="ページ一覧">▤</button>
-      <button class="icon-btn" id="resetBtn" title="読み込み直す">↺</button>
+      <button class="icon-btn" id="resetBtn" title="閉じる">✕</button>
     </div>
   </div>
 
@@ -201,7 +201,7 @@
       <div class="page-count" id="pageCount">- / -</div>
       <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
     </div>
-    <div class="nav-hint">← 進む 画面左右クリック / 矢印キーでページ送り 右綴じ（右から左） → 戻る</div>
+    <div class="nav-hint">← 進む　戻る →</div>
   </div>
 
   <div id="thumbpanel">
@@ -618,9 +618,20 @@
   });
 
   // ================= 操作 =================
-  // クリックで送ったときだけバーを表示（キーボード操作では出さない）
-  $('zoneLeft').onclick = () => { go(current + 1); showChrome(); };
-  $('zoneRight').onclick = () => { go(current - 1); showChrome(); };
+  // クリックでのページ送り。
+  // マウスのチャタリング（1回押しただけで2回クリックが届く）やうっかりダブルクリックで
+  // 2ページ進まないよう、直前のページ送りから CLICK_GUARD_MS 以内のクリックは無視する。
+  // キーボード（押しっぱなしで連続送り）は対象外。
+  const CLICK_GUARD_MS = 250;
+  let lastClickTurn = -Infinity;
+  function clickTurn(e, delta){
+    showChrome(); // クリックで送ったときだけバーを表示（キーボード操作では出さない）
+    if (e.timeStamp - lastClickTurn < CLICK_GUARD_MS) return;
+    lastClickTurn = e.timeStamp;
+    go(current + delta);
+  }
+  $('zoneLeft').onclick = e => clickTurn(e, +1);
+  $('zoneRight').onclick = e => clickTurn(e, -1);
 
   document.addEventListener('keydown', e => {
     if (!hasBook() || e.altKey || e.ctrlKey || e.metaKey) return; // Alt+← などブラウザの操作は邪魔しない
