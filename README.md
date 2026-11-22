@@ -7,8 +7,10 @@
 
 ## 使い方
 
-1. `reader.html` をダウンロードして、ブラウザ（Chrome / Edge / Safari / Firefox）で開きます。
+1. **[ビューワーを開く](https://tsugunagato.github.io/manga-viewer/reader.html)**（PCのブラウザで）
 2. 画像ファイルかフォルダを選ぶか、画面にドラッグ&ドロップします。
+
+`reader.html` をダウンロードして、手元のブラウザ（Chrome / Edge / Safari / Firefox）で直接開いても使えます。
 
 ## 主な機能
 
