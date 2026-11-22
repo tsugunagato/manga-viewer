@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マンガビューワー</title>
+<!-- フォント本体は、画面に出る文字だけを含む軽い版をスクリプトの先頭で読み込む（loadUiFont） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+  :root{
+    --ink:#fff;            /* 背景 */
+    --panel:#f5f8fb;       /* カード・パネル */
+    --panel-2:#eaf5fe;     /* ドラッグ中のカード */
+    --paper:#fff;          /* ページ画像の下地 */
+    --accent:#4baef3;      /* スカイブルー */
+    --accent-hover:#2f9be6;
+    --on-accent:#fff;      /* アクセント上の文字 */
+    --text:#1f2933;
+    --muted:#6b7684;
+    --faint:#9aa4b1;
+    --line:#dfe5ec;
+    --line-strong:#c3ccd6;
+    --bar-bg:255,255,255;  /* 上下バーのグラデーション(RGB) */
+    /* PCに入っているゴシック体（ファイル名など、事前に決まっていない文字に使う） */
+    --sys-font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    height:100%; overflow:hidden;
+    background:var(--ink); color:var(--text);
+    font-family:'Zen Kaku Gothic New', var(--sys-font);
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* 作品名・ファイル名は Webフォントに含めていない文字が出るので、最初からPCのフォントで表示する */
+  .book-name, .thumb-item div{ font-family:var(--sys-font); }
+  button{ font:inherit; color:inherit; cursor:pointer; }
+  #app{
+    position:relative; width:100vw;
+    height:100vh; height:100dvh; /* スマホでブラウザのバーに隠れないように */
+    display:flex; flex-direction:column;
+  }
+
+  /* 背景の網点 */
+  .screentone{
+    position:absolute; inset:0; pointer-events:none;
+    background-image:radial-gradient(var(--line) 1px, transparent 1.4px);
+    background-size:14px 14px; opacity:.35;
+  }
+
+  /* ---------- 初期画面 ---------- */
+  #dropzone{
+    position:absolute; inset:0; z-index:5; padding:24px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .drop-card{
+    width:min(560px, 92vw); padding:56px 40px; text-align:center;
+    background:var(--panel); border:1px solid var(--line);
+    outline:1px dashed var(--line-strong); outline-offset:-14px;
+  }
+  .drop-card.dragover{ outline-color:var(--accent); background:var(--panel-2); }
+  .eyebrow{
+    font-weight:900; font-size:28px; color:var(--accent);
+    letter-spacing:.3em; padding-left:.3em; /* 末尾の字間分を補正して中央揃えにする */
+    margin-bottom:18px;
+  }
+  .drop-sub{ font-size:13px; color:var(--muted); line-height:1.8; margin-bottom:32px; }
+  .drop-actions{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .btn{
+    font-weight:700; font-size:14px; letter-spacing:.05em;
+    color:var(--on-accent); background:var(--accent);
+    border:none; padding:13px 30px;
+    transition:background .15s, transform .1s;
+  }
+  .btn:hover{ background:var(--accent-hover); }
+  .btn:active{ transform:scale(.98); }
+  .btn-ghost, .btn-ghost:hover{ background:transparent; border:1px solid var(--line); color:var(--muted); }
+  .btn-ghost:hover{ color:var(--text); border-color:var(--line-strong); }
+  .drop-note{ margin-top:22px; font-size:11px; color:var(--faint); }
+
+  /* ---------- 上下バー（マウスを動かしたときだけ表示） ---------- */
+  #topbar, #bottombar{
+    position:absolute; left:0; right:0; z-index:4;
+    opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  #app.chrome-visible #topbar, #app.chrome-visible #bottombar{ opacity:1; pointer-events:auto; }
+  #topbar{
+    top:0; padding:14px 20px;
+    display:flex; align-items:center; justify-content:space-between;
+    background:linear-gradient(rgba(var(--bar-bg),.94), rgba(var(--bar-bg),0));
+  }
+  .title-block{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+  .app-title{ font-weight:700; font-size:15px; letter-spacing:.15em; white-space:nowrap; }
+  .book-name{
+    font-size:12px; color:var(--muted); max-width:40vw;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .top-actions{ display:flex; gap:8px; }
+  .icon-btn{
+    width:34px; height:34px; font-size:15px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--panel); border:1px solid var(--line); color:var(--muted);
+  }
+  .icon-btn:hover{ color:var(--text); border-color:var(--line-strong); }
+  #startSideBtn{ width:auto; padding:0 12px; font-size:11px; font-weight:700; letter-spacing:.05em; }
+
+  #bottombar{
+    bottom:0; padding:16px 24px 20px;
+    background:linear-gradient(to top, rgba(var(--bar-bg),.94), rgba(var(--bar-bg),0));
+  }
+  .progress-row{ display:flex; align-items:center; gap:14px; }
+  .page-count{ font-size:12px; color:var(--muted); min-width:78px; text-align:center; letter-spacing:.05em; }
+  .progress-track{ flex:1; height:2px; background:var(--line); position:relative; cursor:pointer; }
+  .progress-track::before{ content:""; position:absolute; inset:-9px 0; } /* 細いバーでもクリックしやすく */
+  .progress-fill{ position:absolute; top:0; right:0; height:100%; background:var(--accent); }
+  .nav-hint{ text-align:center; font-size:10px; color:var(--faint); margin-top:12px; letter-spacing:.08em; }
+
+  /* ---------- 見開き表示 ---------- */
+  #viewer{ position:relative; z-index:1; flex:1; min-height:0; display:flex; }
+  .page-slot{ flex:1; min-width:0; height:100%; display:flex; align-items:center; }
+  #slotLeft{ justify-content:flex-end; }   /* 左右のページが画面中央で接するように寄せる */
+  #slotRight{ justify-content:flex-start; }
+  #slotLeft.centered{ flex:none; width:100%; justify-content:center; } /* 横長の見開き画像は中央に */
+  .page-slot.empty{ visibility:hidden; }
+  .page-slot img{ max-width:100%; max-height:100%; object-fit:contain; background:var(--paper); }
+  .clickzone{ position:absolute; top:0; bottom:0; width:50%; z-index:3; cursor:pointer; }
+  .clickzone.left{ left:0; }
+  .clickzone.right{ right:0; }
+
+  /* ---------- ページ一覧 ---------- */
+  #thumbpanel{
+    position:absolute; top:0; right:0; bottom:0; z-index:6;
+    width:min(300px, 78vw);
+    display:flex; flex-direction:column;
+    background:var(--panel); border-left:1px solid var(--line);
+    transform:translateX(100%); transition:transform .25s;
+  }
+  #thumbpanel.open{ transform:none; }
+  .thumb-head{
+    padding:16px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+    font-weight:700; font-size:13px; letter-spacing:.1em;
+  }
+  .thumb-list{
+    flex:1; overflow-y:auto; padding:12px;
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; align-content:start;
+  }
+  .thumb-item{ cursor:pointer; border:2px solid transparent; display:flex; flex-direction:column; gap:4px; }
+  .thumb-item.active{ border-color:var(--accent); }
+  .thumb-item img{ display:block; width:100%; aspect-ratio:5/7; object-fit:cover; background:var(--paper); }
+  .thumb-item div{ font-size:10px; color:var(--muted); text-align:center; overflow-wrap:anywhere; }
+
+  /* 画像を読み込む前は初期画面だけを出す */
+  #app.no-book :is(#topbar, #bottombar, #viewer, #thumbpanel){ display:none; }
+  #app:not(.no-book) #dropzone{ display:none; }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); }
+</style>
+</head>
+<body>
+<div id="app" class="no-book">
+  <div class="screentone"></div>
+
+  <div id="dropzone">
+    <div class="drop-card" id="dropCard">
+      <div class="eyebrow">MANGA VIEWER</div>
+      <div class="drop-sub">PNG・JPG・WebP画像、またはフォルダをドラッグ&amp;ドロップ<br>あるいはファイルを選択してください</div>
+      <div class="drop-actions">
+        <button class="btn" id="pickFilesBtn">画像ファイルを選択</button>
+        <button class="btn btn-ghost" id="pickFolderBtn">フォルダを選択</button>
+      </div>
+      <div class="drop-note">読み込んだ画像はこの端末内でのみ処理され、どこにも送信されません</div>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" multiple hidden>
+  <input type="file" id="folderInput" webkitdirectory multiple hidden>
+
+  <div id="topbar">
+    <div class="title-block">
+      <span class="app-title">マンガビューワー</span>
+      <span class="book-name" id="bookName"></span>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="startSideBtn" title="開始ページの位置を切替（右／左）">開始:左</button>
+      <button class="icon-btn" id="fullscreenBtn" title="全画面表示">⛶</button>
+      <button class="icon-btn" id="thumbToggleBtn" title="ページ一覧">▤</button>
+      <button class="icon-btn" id="resetBtn" title="読み込み直す">↺</button>
+    </div>
+  </div>
+
+  <div id="viewer">
+    <div class="page-slot" id="slotLeft"><img id="imgLeft" alt=""></div>
+    <div class="page-slot" id="slotRight"><img id="imgRight" alt=""></div>
+    <div class="clickzone left" id="zoneLeft"></div>
+    <div class="clickzone right" id="zoneRight"></div>
+  </div>
+
+  <div id="bottombar">
+    <div class="progress-row">
+      <div class="page-count" id="pageCount">- / -</div>
+      <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+    <div class="nav-hint">← 進む 画面左右クリック / 矢印キーでページ送り 右綴じ（右から左） → 戻る</div>
+  </div>
+
+  <div id="thumbpanel">
+    <div class="thumb-head">
+      ページ一覧
+      <button class="icon-btn" id="thumbCloseBtn" title="閉じる">✕</button>
+    </div>
+    <div class="thumb-list" id="thumbList"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const app = $('app'), dropCard = $('dropCard'), bookName = $('bookName');
+  const fileInput = $('fileInput'), folderInput = $('folderInput');
+  const topbar = $('topbar'), bottombar = $('bottombar');
+  const slotLeft = $('slotLeft'), slotRight = $('slotRight'), imgLeft = $('imgLeft'), imgRight = $('imgRight');
+  const pageCount = $('pageCount'), progressFill = $('progressFill'), progressTrack = $('progressTrack');
+  const startSideBtn = $('startSideBtn'), fullscreenBtn = $('fullscreenBtn');
+  const thumbpanel = $('thumbpanel'), thumbList = $('thumbList');
+
+  let pages = [];         // { file, url, name, w, h, wide, thumbUrl, thumbPromise, dead }
+  let spreads = [];       // 見開きごとのページ番号の配列 例: [[0], [1,2], [3,4], ...]
+  let pageToSpread = [];  // ページ番号 → 見開き番号
+  let current = 0;
+  let startSide = 'left';
+  let loadId = 0;         // 読み込みが重なったとき、古い方の結果を捨てるための番号
+
+  const hasBook = () => pages.length > 0;
+  const IMG_RE = /\.(png|jpe?g|webp)$/i;
+  const collator = new Intl.Collator('ja', { numeric:true, sensitivity:'base' });
+
+  // ================= フォント =================
+  // Zen Kaku Gothic New を丸ごと読むと約220KB・17回前後の通信になる。
+  // 太さごとに、画面に出る決まった文字だけを集めて Google Fonts に渡し、その文字だけのフォントを作ってもらう。
+  // 文言を書き換えても自動で集め直すので修正は不要。要素の太さ（font-weight）を変えたときは下の振り分けも合わせる。
+  (function loadUiFont(){
+    const byWeight = {
+      400: { sel:['.drop-sub', '.drop-note', '.nav-hint'], extra:'0123456789-/ ' },  // extra: ページ番号
+      700: { sel:['.drop-actions', '.app-title', '#startSideBtn', '.thumb-head'], extra:'開始:右' }, // extra: 切り替え後の文言
+      900: { sel:['.eyebrow'], extra:'' },
+    };
+    for (const [weight, { sel, extra }] of Object.entries(byWeight)){
+      const text = sel.map(s => document.querySelector(s).textContent).join('') + extra;
+      const chars = [...new Set(text.replace(/\s+/g, ' '))].sort().join('');
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = `https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@${weight}&display=swap&text=`
+        + encodeURIComponent(chars);
+      document.head.append(link);
+    }
+  })();
+
+  // ================= 画像の読み込み =================
+
+  // 見開き判定には縦横サイズだけあればよいので、画像全体は読まずにファイル先頭のヘッダーから取り出す。
+  // 対応外・読み取れないときは null（呼び出し側で画像として読み込み直す）。
+  function sniffSize(v){
+    const n = v.byteLength, u16 = o => v.getUint16(o), u32 = o => v.getUint32(o);
+    if (u32(0) === 0x89504E47) return { w:u32(16), h:u32(20) };                 // PNG
+    if (u32(0) === 0x52494646 && u32(8) === 0x57454250){                          // WebP
+      const t = u32(12), le24 = o => v.getUint8(o) | v.getUint8(o+1) << 8 | v.getUint8(o+2) << 16;
+      if (t === 0x56503820) return { w:v.getUint16(26,true) & 0x3fff, h:v.getUint16(28,true) & 0x3fff }; // VP8
+      if (t === 0x5650384C){ const b = v.getUint32(21,true); return { w:(b & 0x3fff) + 1, h:(b >> 14 & 0x3fff) + 1 }; } // VP8L
+      if (t === 0x56503858) return { w:le24(24) + 1, h:le24(27) + 1 };          // VP8X
+      return null;
+    }
+    if (u16(0) === 0xFFD8){                                                       // JPEG
+      let o = 2, rotated = false;
+      while (o + 9 < n){
+        if (v.getUint8(o) !== 0xFF) return null;
+        const m = v.getUint8(o + 1), len = u16(o + 2);
+        if (m === 0xDA || len < 2) return null;
+        if (m === 0xE1) rotated = exifRotated(v, o + 4);
+        if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC){
+          const h = u16(o + 5), w = u16(o + 7);
+          return rotated ? { w:h, h:w } : { w, h };
+        }
+        o += 2 + len;
+      }
+    }
+    return null;
+  }
+  // スマホ写真などで EXIF の向き指定が 90°/270° のときは縦横を入れ替える（<img> の表示に合わせる）
+  function exifRotated(v, s){
+    try {
+      if (v.getUint32(s) !== 0x45786966) return false; // "Exif"
+      const t = s + 6, le = v.getUint16(t) === 0x4949;
+      const ifd = t + v.getUint32(t + 4, le), count = v.getUint16(ifd, le);
+      for (let i = 0; i < count; i++){
+        const e = ifd + 2 + i * 12;
+        if (v.getUint16(e, le) === 0x0112) return v.getUint16(e + 8, le) >= 5;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function loadImage(url){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  // まず先頭64KBだけ読む（ほぼすべての画像はこれで足りる）。
+  // JPEGで大きなEXIFやカラープロファイルが先頭にあって届かないときだけ512KBまで読み直す。
+  async function readSize(file, url){
+    for (const bytes of [65536, 524288]){
+      try {
+        const s = sniffSize(new DataView(await file.slice(0, bytes).arrayBuffer()));
+        if (s && s.w && s.h) return s;
+      } catch (e) {}
+      if (file.size <= bytes) break;
+    }
+    try {
+      const img = await loadImage(url);
+      return { w:img.naturalWidth, h:img.naturalHeight };
+    } catch (e) {
+      return { w:0, h:0 };
+    }
+  }
+
+  // arr の各要素に fn を実行する。同時に動かすのは limit 個まで（結果の順番は arr と同じ）
+  async function mapLimit(arr, limit, fn){
+    const out = new Array(arr.length);
+    let next = 0;
+    const worker = async () => { while (next < arr.length){ const i = next++; out[i] = await fn(arr[i]); } };
+    await Promise.all(Array.from({ length:Math.min(limit, arr.length) }, worker));
+    return out;
+  }
+
+  // items: [{ file, path }]  path はフォルダ内での相対パス（並び順に使う）
+  // 数百〜数千ページのフォルダでもメモリを使いすぎないよう、ヘッダーの読み取りは同時に8ファイルまで
+  const READ_CONCURRENCY = 8;
+  function toPages(items){
+    items = items.filter(({ file }) => IMG_RE.test(file.name) && !file.name.startsWith('.')); // ._xxx.jpg 等の隠しファイルを除外
+    items.sort((a, b) => collator.compare(a.path, b.path));
+    return mapLimit(items, READ_CONCURRENCY, async ({ file }) => {
+      const url = URL.createObjectURL(file);
+      const { w, h } = await readSize(file, url);
+      return { file, url, name:file.name, w, h, wide:w > h };
+    });
+  }
+
+  async function loadBook(itemsOrPromise, label){
+    const id = ++loadId;
+    const next = await toPages(await itemsOrPromise);
+    if (id !== loadId){ next.forEach(p => URL.revokeObjectURL(p.url)); return; }
+    if (!next.length){
+      alert('画像ファイル（PNG / JPG / WebP）が見つかりませんでした。');
+      return;
+    }
+    releasePages();
+    pages = next;
+    buildSpreads();
+    current = 0;
+    bookName.textContent = label ? `${label}（${pages.length}ページ）` : `${pages.length}ページ`;
+    app.classList.remove('no-book');
+    renderThumbs();
+    render();
+    showChrome();
+  }
+
+  // 読み込んだ画像・サムネイルのメモリを解放する
+  function releasePages(){
+    pendingThumbs.clear();
+    preloaded.clear();
+    activeThumbs = [];
+    pages.forEach(p => {
+      p.dead = true;
+      URL.revokeObjectURL(p.url);
+      if (p.thumbUrl && p.thumbUrl !== p.url) URL.revokeObjectURL(p.thumbUrl);
+    });
+  }
+
+  // ================= 見開きの組み立てと表示 =================
+
+  // 横長の画像（見開き画像）は単独で1見開きにする。
+  // 開始:右 → 0ページ目からペア（0,1 / 2,3 / ...）
+  // 開始:左 → 0ページ目だけ単独で左に置き、1ページ目からペア（1,2 / 3,4 / ...）
+  function buildSpreads(){
+    spreads = []; pageToSpread = [];
+    const push = s => { s.forEach(i => pageToSpread[i] = spreads.length); spreads.push(s); };
+    let i = 0;
+    if (startSide === 'left' && pages.length){ push([0]); i = 1; }
+    while (i < pages.length){
+      if (!pages[i].wide && i + 1 < pages.length && !pages[i + 1].wide){ push([i, i + 1]); i += 2; }
+      else { push([i]); i += 1; }
+    }
+  }
+
+  function setSlot(slot, img, page){
+    slot.classList.toggle('empty', !page);
+    if (!page) img.removeAttribute('src');
+    else if (img.getAttribute('src') !== page.url) img.src = page.url;
+  }
+
+  function render(){
+    const s = spreads[current];
+    if (!s) return;
+    const a = pages[s[0]], b = s.length > 1 ? pages[s[1]] : null;
+    let left = null, right = null;
+    if (b){ right = a; left = b; }                                       // 右綴じ：若い番号が右
+    else if (a.wide || (current === 0 && startSide === 'left')) left = a; // 見開き画像（中央表示）／開始:左の表紙
+    else right = a;                                                      // それ以外の単独ページは右
+    setSlot(slotLeft, imgLeft, left);
+    setSlot(slotRight, imgRight, right);
+    slotLeft.classList.toggle('centered', !b && a.wide);
+
+    const first = s[0] + 1, last = s[s.length - 1] + 1;
+    pageCount.textContent = (b ? `${last}-${first}` : first) + ` / ${pages.length}`;
+    progressFill.style.width = current / Math.max(spreads.length - 1, 1) * 100 + '%';
+
+    highlightThumb();
+    preloadAround();
+  }
+
+  function go(i){
+    i = Math.max(0, Math.min(spreads.length - 1, i));
+    if (i !== current){ current = i; render(); }
+  }
+
+  // 前後の見開きの画像を先にデコードしておき、ページ送りを引っかからないようにする
+  const preloaded = new Map();
+  function preloadAround(){
+    [current + 1, current - 1].forEach(si => (spreads[si] || []).forEach(pi => {
+      const url = pages[pi].url;
+      if (preloaded.has(url)) return;
+      const img = new Image();
+      img.src = url;
+      img.decode().catch(() => {});
+      preloaded.set(url, img);
+    }));
+    while (preloaded.size > 6) preloaded.delete(preloaded.keys().next().value);
+  }
+
+  // ================= 上下バーの表示 =================
+  let chromeTimer = 0, lastMove = 0;
+  function showChrome(){
+    app.classList.add('chrome-visible');
+    clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(hideChrome, 2600);
+  }
+  function hideChrome(){
+    // マウスがバーの上にある間は隠さない
+    if (topbar.matches(':hover') || bottombar.matches(':hover')){
+      chromeTimer = setTimeout(hideChrome, 1000);
+      return;
+    }
+    app.classList.remove('chrome-visible');
+  }
+
+  // ================= ページ一覧 =================
+  // 元画像を並べると重いので、約200×280pxに縮小したJPEGを作って表示する。
+  // 作るのは一覧を開いていて、画面内（と前後400px）にあるサムネイルだけ。
+  // スクロールで画面外に出たものは順番待ちから外し、見えているものを優先する。
+  const THUMB_W = 200, THUMB_H = 280, THUMB_CONCURRENCY = 2;
+  const pendingThumbs = new Set();
+  let thumbBusy = 0, thumbObserver = null, activeThumbs = [];
+
+  const fitThumb = (w, h) => {
+    const k = Math.min(1, Math.max(THUMB_W / w, THUMB_H / h)); // 枠を埋められる最小サイズ（拡大はしない）
+    return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
+  };
+
+  async function makeThumb(p){
+    let src, w, h;
+    try {
+      // 対応ブラウザでは縮小しながら別スレッドでデコードされるので、画面が固まりにくい
+      if (!p.w || !p.h) throw 0;
+      [w, h] = fitThumb(p.w, p.h);
+      src = await createImageBitmap(p.file, { imageOrientation:'from-image', resizeWidth:w, resizeHeight:h, resizeQuality:'medium' });
+    } catch (e) {
+      src = await loadImage(p.url);
+      [w, h] = fitThumb(src.naturalWidth, src.naturalHeight);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, w, h);
+    if (src.close) src.close();
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+    return blob ? URL.createObjectURL(blob) : null;
+  }
+
+  function getThumb(p){
+    return p.thumbPromise ||= makeThumb(p).catch(() => null).then(url => {
+      if (p.dead){ if (url) URL.revokeObjectURL(url); return null; }
+      return p.thumbUrl = url || p.url;
+    });
+  }
+
+  function pumpThumbs(){
+    while (thumbBusy < THUMB_CONCURRENCY && pendingThumbs.size){
+      const el = pendingThumbs.values().next().value;
+      pendingThumbs.delete(el);
+      thumbBusy++;
+      getThumb(pages[+el.dataset.index]).then(url => {
+        if (url && el.isConnected){
+          el.firstChild.src = url;
+          if (thumbObserver) thumbObserver.unobserve(el);
+        }
+      }).finally(() => { thumbBusy--; pumpThumbs(); });
+    }
+  }
+
+  function observeThumbs(){
+    if (thumbObserver){ thumbObserver.disconnect(); thumbObserver = null; }
+    pendingThumbs.clear();
+    if (!thumbpanel.classList.contains('open')) return;
+    thumbObserver = new IntersectionObserver(entries => {
+      entries.forEach(en => en.isIntersecting ? pendingThumbs.add(en.target) : pendingThumbs.delete(en.target));
+      pumpThumbs();
+    }, { root:thumbList, rootMargin:'400px 0px' });
+    for (const el of thumbList.children) if (!el.firstChild.src) thumbObserver.observe(el);
+  }
+
+  function renderThumbs(){
+    const frag = document.createDocumentFragment();
+    pages.forEach((p, i) => {
+      const item = document.createElement('div');
+      item.className = 'thumb-item';
+      item.dataset.index = i;
+      const img = document.createElement('img');
+      img.alt = '';
+      const label = document.createElement('div');
+      label.textContent = `${i + 1} / ${p.name}`;
+      item.append(img, label);
+      frag.append(item);
+    });
+    thumbList.replaceChildren(frag);
+    activeThumbs = [];
+    observeThumbs();
+  }
+
+  function highlightThumb(smooth = true){
+    activeThumbs.forEach(el => el.classList.remove('active'));
+    activeThumbs = (spreads[current] || []).map(i => thumbList.children[i]).filter(Boolean);
+    activeThumbs.forEach(el => el.classList.add('active'));
+    if (thumbpanel.classList.contains('open')) scrollToCurrentThumb(smooth);
+  }
+
+  // 今のページが一覧の中央に来るようにスクロールする（見開きが2行にまたがっても両方入るように）
+  function scrollToCurrentThumb(smooth){
+    if (!activeThumbs.length) return;
+    const listTop = thumbList.getBoundingClientRect().top;
+    const rects = activeThumbs.map(el => el.getBoundingClientRect());
+    const top = Math.min(...rects.map(r => r.top)), bottom = Math.max(...rects.map(r => r.bottom));
+    const y = top - listTop + thumbList.scrollTop - (thumbList.clientHeight - (bottom - top)) / 2;
+    thumbList.scrollTo({ top:Math.max(0, y), behavior:smooth ? 'smooth' : 'auto' });
+  }
+
+  function openThumbs(open){
+    thumbpanel.classList.toggle('open', open);
+    if (open) scrollToCurrentThumb(false); // 先にスクロールしてから、見えている分だけ縮小版を作る
+    observeThumbs();
+  }
+
+  // ================= 入力 =================
+  $('pickFilesBtn').onclick = () => fileInput.click();
+  $('pickFolderBtn').onclick = () => folderInput.click();
+  fileInput.onchange = () => {
+    loadBook([...fileInput.files].map(file => ({ file, path:file.name })), null);
+    fileInput.value = '';
+  };
+  folderInput.onchange = () => {
+    const files = [...folderInput.files];
+    const label = files.length ? files[0].webkitRelativePath.split('/')[0] : null;
+    loadBook(files.map(file => ({ file, path:file.webkitRelativePath || file.name })), label);
+    folderInput.value = '';
+  };
+
+  // ドラッグ&ドロップ（フォルダごとでも可。サブフォルダも含めて読む）
+  const entryFile = en => new Promise((res, rej) => en.file(res, rej));
+  const readEntries = r => new Promise((res, rej) => r.readEntries(res, rej));
+  async function walk(entry, out){
+    if (entry.isFile){
+      try { out.push({ file:await entryFile(entry), path:entry.fullPath }); } catch (e) {}
+    } else if (entry.isDirectory){
+      const reader = entry.createReader();
+      let batch;
+      while ((batch = await readEntries(reader).catch(() => [])).length){
+        await Promise.all(batch.map(en => walk(en, out)));
+      }
+    }
+  }
+  function handleDrop(dt){
+    // DataTransfer はイベント中しか読めないので、エントリーの取り出しは先に同期的に行う
+    const entries = [...(dt.items || [])].map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (!entries.length){
+      loadBook([...dt.files].map(file => ({ file, path:file.name })), null);
+      return;
+    }
+    const label = entries.length === 1 && entries[0].isDirectory ? entries[0].name : null;
+    const out = [];
+    loadBook(Promise.all(entries.map(en => walk(en, out))).then(() => out), label);
+  }
+  ['dragenter', 'dragover'].forEach(ev => app.addEventListener(ev, e => {
+    e.preventDefault(); // ブラウザが画像を直接開いてしまうのを防ぐ
+    if (!hasBook()) dropCard.classList.add('dragover');
+  }));
+  app.addEventListener('dragleave', e => {
+    if (!app.contains(e.relatedTarget)) dropCard.classList.remove('dragover');
+  });
+  app.addEventListener('drop', e => {
+    e.preventDefault();
+    dropCard.classList.remove('dragover');
+    if (!hasBook()) handleDrop(e.dataTransfer);
+  });
+
+  // ================= 操作 =================
+  // クリックで送ったときだけバーを表示（キーボード操作では出さない）
+  $('zoneLeft').onclick = () => { go(current + 1); showChrome(); };
+  $('zoneRight').onclick = () => { go(current - 1); showChrome(); };
+
+  document.addEventListener('keydown', e => {
+    if (!hasBook() || e.altKey || e.ctrlKey || e.metaKey) return; // Alt+← などブラウザの操作は邪魔しない
+    switch (e.key){
+      case 'ArrowLeft': go(current + 1); break;
+      case 'ArrowRight': go(current - 1); break;
+      case 'Home': go(0); break;
+      case 'End': go(spreads.length - 1); break;
+      case 'Escape': openThumbs(false); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', () => {
+    const now = performance.now();
+    if (hasBook() && now - lastMove > 150){ lastMove = now; showChrome(); }
+  }, { passive:true });
+
+  progressTrack.onclick = e => {
+    const r = progressTrack.getBoundingClientRect();
+    go(Math.round((1 - (e.clientX - r.left) / r.width) * (spreads.length - 1))); // 右から左へ進む
+  };
+
+  thumbList.onclick = e => {
+    const item = e.target.closest('.thumb-item');
+    if (item) go(pageToSpread[+item.dataset.index]);
+  };
+  $('thumbToggleBtn').onclick = () => openThumbs(!thumbpanel.classList.contains('open'));
+  $('thumbCloseBtn').onclick = () => openThumbs(false);
+
+  startSideBtn.onclick = () => {
+    startSide = startSide === 'left' ? 'right' : 'left';
+    startSideBtn.textContent = startSide === 'left' ? '開始:左' : '開始:右';
+    if (!hasBook()) return;
+    const page = spreads[current][0];
+    buildSpreads();
+    current = pageToSpread[page]; // 表示中のページを含む見開きに留まる
+    render();
+  };
+
+  $('resetBtn').onclick = () => {
+    if (!confirm('現在読み込んでいる画像をすべて閉じますか？')) return;
+    openThumbs(false);
+    releasePages();
+    pages = []; spreads = []; pageToSpread = []; current = 0;
+    thumbList.replaceChildren();
+    setSlot(slotLeft, imgLeft, null);
+    setSlot(slotRight, imgRight, null);
+    app.classList.add('no-book');
+  };
+
+  // 全画面表示（iPhone の Safari など未対応の環境ではボタンを隠す）
+  const root = document.documentElement;
+  const fsRequest = root.requestFullscreen || root.webkitRequestFullscreen;
+  const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  if (!fsRequest) fullscreenBtn.style.display = 'none';
+  fullscreenBtn.onclick = () => {
+    try {
+      const r = fsElement() ? fsExit.call(document) : fsRequest.call(root);
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) {}
+  };
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => {
+    const on = !!fsElement();
+    fullscreenBtn.textContent = on ? '⧉' : '⛶';
+    fullscreenBtn.title = on ? '全画面表示を解除' : '全画面表示';
+  }));
+})();
+</script>
+</body>
+</html>
