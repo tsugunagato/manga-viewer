@@ -130,6 +130,19 @@
   .clickzone{ position:absolute; top:0; bottom:0; width:50%; z-index:3; cursor:pointer; }
   .clickzone.left{ left:0; }
   .clickzone.right{ right:0; }
+  /* 最後の見開きで左端に出る「最初のページに戻る」ボタン（3ページ以上のときだけ） */
+  .restart-btn{
+    position:absolute; left:24px; top:50%; z-index:4;
+    width:52px; height:52px; border-radius:50%; transform:translateY(-50%);
+    display:none; align-items:center; justify-content:center;
+    background:var(--panel); border:1px solid var(--line); color:var(--muted);
+    box-shadow:0 2px 10px rgba(31,41,51,.1);
+    transition:color .15s, border-color .15s;
+  }
+  .restart-btn.show{ display:flex; animation:fadein .25s; }
+  .restart-btn:hover{ color:var(--accent); border-color:var(--accent); }
+  .restart-btn svg{ width:24px; height:24px; }
+  @keyframes fadein{ from{ opacity:0; } }
 
   /* ---------- ページ一覧 ---------- */
   #thumbpanel{
@@ -203,6 +216,10 @@
     <div class="page-slot" id="slotRight"><img id="imgRight" alt=""></div>
     <div class="clickzone left" id="zoneLeft"></div>
     <div class="clickzone right" id="zoneRight"></div>
+    <button class="icon-btn restart-btn" id="restartBtn" title="最初のページに戻る">
+      <!-- 反時計回りの円形矢印。線の端は右の真ん中、矢じりは右下 -->
+      <svg viewBox="0 0 24 24"><g transform="rotate(180 12 12)"><path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.5"/><path d="M4 4v4.5h4.5"/></g></svg>
+    </button>
   </div>
 
   <div id="bottombar">
@@ -232,7 +249,7 @@
   const slotLeft = $('slotLeft'), slotRight = $('slotRight'), imgLeft = $('imgLeft'), imgRight = $('imgRight');
   const pageCount = $('pageCount'), progressFill = $('progressFill'), progressTrack = $('progressTrack');
   const startSideBtn = $('startSideBtn'), fullscreenBtn = $('fullscreenBtn');
-  const thumbpanel = $('thumbpanel'), thumbList = $('thumbList');
+  const thumbpanel = $('thumbpanel'), thumbList = $('thumbList'), restartBtn = $('restartBtn');
 
   let pages = [];         // { file, url, name, w, h, wide, thumbUrl, thumbPromise, dead }
   let spreads = [];       // 見開きごとのページ番号の配列 例: [[0], [1,2], [3,4], ...]
@@ -423,6 +440,7 @@
     setSlot(slotLeft, imgLeft, left);
     setSlot(slotRight, imgRight, right);
     slotLeft.classList.toggle('centered', !b && a.wide);
+    restartBtn.classList.toggle('show', pages.length >= 3 && current === spreads.length - 1);
 
     const first = s[0] + 1, last = s[s.length - 1] + 1;
     pageCount.textContent = (b ? `${last}-${first}` : first) + ` / ${pages.length}`;
@@ -641,6 +659,7 @@
   }
   $('zoneLeft').onclick = e => clickTurn(e, +1);
   $('zoneRight').onclick = e => clickTurn(e, -1);
+  restartBtn.onclick = () => { go(0); restartBtn.blur(); };
 
   // マウスホイールでのページ送り（下で次、上で前）。
   // トラックパッドやホイールは1回の操作で細かいイベントが大量に届くので、
