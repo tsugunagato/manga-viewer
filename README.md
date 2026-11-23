@@ -10,7 +10,7 @@
 1. **[ビューワーを開く](https://tsugunagato.github.io/manga-viewer/)**（PCのブラウザで）
 2. 画像ファイルかフォルダを選ぶか、画面にドラッグ&ドロップします。
 
-`index.html` をダウンロードして、手元のブラウザ（Chrome / Edge / Safari / Firefox）で直接開いても使えます。
+`index.html` をダウンロードして、手元のブラウザ（Chrome / Edge / Safari / Firefox）で直接開いても使えます！
 
 ## 主な機能
 
