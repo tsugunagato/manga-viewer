@@ -633,6 +633,24 @@
   $('zoneLeft').onclick = e => clickTurn(e, +1);
   $('zoneRight').onclick = e => clickTurn(e, -1);
 
+  // マウスホイールでのページ送り（下で次、上で前）。
+  // トラックパッドやホイールは1回の操作で細かいイベントが大量に届くので、
+  // 1ページ送ったらイベントが WHEEL_IDLE_MS 途切れるまで次は送らない（1回の操作＝1ページ）。
+  const WHEEL_THRESHOLD = 30, WHEEL_IDLE_MS = 200;
+  let wheelAcc = 0, wheelLocked = false, wheelTimer = 0;
+  app.addEventListener('wheel', e => {
+    if (!hasBook() || e.ctrlKey || thumbpanel.contains(e.target)) return; // ピンチ操作とページ一覧のスクロールはそのまま
+    e.preventDefault();
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { wheelLocked = false; wheelAcc = 0; }, WHEEL_IDLE_MS);
+    if (wheelLocked) return;
+    wheelAcc += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1); // 行・ページ単位ならピクセルに換算
+    if (Math.abs(wheelAcc) < WHEEL_THRESHOLD) return;
+    go(current + (wheelAcc > 0 ? 1 : -1));
+    wheelLocked = true;
+    wheelAcc = 0;
+  }, { passive:false });
+
   document.addEventListener('keydown', e => {
     if (!hasBook() || e.altKey || e.ctrlKey || e.metaKey) return; // Alt+← などブラウザの操作は邪魔しない
     // A / D はキーの位置（e.code）で判定するので、日本語入力がオンでも Shift を押していても効く
